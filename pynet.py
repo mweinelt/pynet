@@ -157,13 +157,17 @@ def gen_qemu_call(image, node):
 
         mesh_id += 1
 
+    ssh_port = 22000 + node.id
+
     call = ['-nographic',
             '-enable-kvm',
 #            '-no-hpet',
 #            '-cpu', 'host',
             '-netdev', 'user,id=hn1',
             '-device', eth_driver + ',addr=0x06,netdev=hn1,id=nic1,mac=' + nat_mac,
-            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client,
+#            '-netdev', 'tap,id=hn2,script=no,downscript=no,ifname=%s' % node.if_client,
+#'-netdev', 'user,id=hn2,hostfwd=tcp:[::1]:' + str(ssh_port) + '-192.168.1.1:22,net=192.168.1.15/24,ipv6-net=' + SITE_LOCAL_PREFIX + "::/64",
+'-netdev', 'user,id=hn2,hostfwd=tcp:[::1]:' + str(ssh_port) + '-[::1]:22,net=192.168.1.15/24,ipv6-net=' + SITE_LOCAL_PREFIX + "::/64",
             '-device', eth_driver + ',addr=0x05,netdev=hn2,id=nic2,mac=' + client_mac]
 
     # '-d', 'guest_errors', '-d', 'cpu_reset', '-gdb', 'tcp::' + str(3000 + node.id),
@@ -209,6 +213,22 @@ def wait_bash_cmd(cmd):
 
     # Wait for the subprocess exit
     yield from proc.wait()
+
+async def configure_node(initial_time, node):
+    ssh_port = 22000 + node.id
+
+    await wait_bash_cmd('while ! nc 127.0.0.1 ' + str(ssh_port) + ' -w 1 > /dev/null; do sleep 1; done;')
+    dbg = debug_print(initial_time, node.hostname)
+
+    dbg('ready!')
+
+    addr = "127.0.0.1"
+
+    async with asyncssh.connect(addr, ssh_port, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE]) as conn:
+        await config_node(initial_time, node, conn)
+
+    dbg('configured')
+
 
 async def install_client(initial_time, node):
     clientname = "client" + str(node.id)
@@ -390,7 +410,8 @@ def run_all():
     for node in Node.all_nodes:
         loop.create_task(gen_qemu_call(image, node))
         loop.create_task(read_to_buffer(node))
-        loop.create_task(install_client(initial_time, node))
+        loop.create_task(configure_node(initial_time, node))
+#        loop.create_task(install_client(initial_time, node))
 
     loop.run_forever()
 
