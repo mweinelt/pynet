@@ -226,8 +226,16 @@ async def configure_node(initial_time, node):
 
     addr = "127.0.0.1"
 
-    async with asyncssh.connect(addr, ssh_port, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE]) as conn:
-        await config_node(initial_time, node, conn)
+    while True:
+        try:
+            async with asyncssh.connect(addr, ssh_port, username='root', known_hosts=None, client_keys=[SSH_KEY_FILE]) as conn:
+                await config_node(initial_time, node, conn)
+
+            break
+        except ConnectionResetError:
+            # if the instance is not finally set up completely, it may
+            # reset the connection.
+            continue
 
     dbg('configured')
 
